@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+	"fmt"
 
 	maxminddb "github.com/oschwald/maxminddb-golang"
 )
@@ -410,4 +412,25 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	//success!
 	m.next.ServeHTTP(w, r)
+}
+
+func inTimeSpan(start, end, check time.Time) bool {
+    return check.After(start) && check.Before(end)
+}
+
+func Demo() {
+	fmt.Println(time.Now().Format(time.RFC850))
+    start, _ := time.Parse(time.RFC822, "01 Jan 15 10:00 UTC")
+    end, _ := time.Parse(time.RFC822, "01 Jan 16 10:00 UTC")
+
+    in, _ := time.Parse(time.RFC822, "01 Jan 15 20:00 UTC")
+    out, _ := time.Parse(time.RFC822, "01 Jan 17 10:00 UTC")
+
+    if inTimeSpan(start, end, in) {
+        fmt.Println(in, "is between", start, "and", end, ".")
+    }
+
+    if !inTimeSpan(start, end, out) {
+        fmt.Println(out, "is not between", start, "and", end, ".")
+    }
 }
