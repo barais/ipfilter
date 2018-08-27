@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"fmt"
 
 	maxminddb "github.com/oschwald/maxminddb-golang"
 )
@@ -31,6 +31,7 @@ var (
 //
 //This could be improved with some algorithmic magic.
 type Options struct {
+	AllowedSchedule []*IPInterval
 	//explicity allowed IPs
 	AllowedIPs []string
 	//explicity blocked IPs
@@ -61,6 +62,58 @@ type Options struct {
 	}
 }
 
+type IPInterval struct {
+	Lower      *time.Time
+	Upper      *time.Time
+	AllowedIPs string
+}
+
+type Interval struct {
+	Lower *time.Time
+	Upper *time.Time
+}
+
+type AllowIPInterval struct {
+	Lower *time.Time
+	Upper *time.Time
+	Allow bool
+}
+
+/*
+ *  Constuctor for Interval
+ */
+func NewIPInterval(low *time.Time, up *time.Time, ip string) *IPInterval {
+	f := &IPInterval{
+		Lower:      low,
+		Upper:      up,
+		AllowedIPs: ip,
+	}
+	return f
+}
+
+/*
+ *  Constuctor for Interval
+ */
+func NewInterval(low *time.Time, up *time.Time, ip string) *Interval {
+	f := &Interval{
+		Lower: low,
+		Upper: up,
+	}
+	return f
+}
+
+/*
+ *  Constuctor for Interval
+ */
+func NewAllowIPInterval(low *time.Time, up *time.Time, allow bool) *AllowIPInterval {
+	f := &AllowIPInterval{
+		Lower: low,
+		Upper: up,
+		Allow: allow,
+	}
+	return f
+}
+
 type IPFilter struct {
 	opts Options
 	//mut protects the below
@@ -68,15 +121,16 @@ type IPFilter struct {
 	mut            sync.RWMutex
 	defaultAllowed bool
 	db             *maxminddb.Reader
-	ips            map[string]bool
+	ips            map[string]*AllowIPInterval
 	codes          map[string]bool
 	subnets        []*subnet
 }
 
 type subnet struct {
-	str     string
-	ipnet   *net.IPNet
-	allowed bool
+	str      string
+	ipnet    *net.IPNet
+	allowed  bool
+	interval *Interval
 }
 
 //NewNoDB constructs IPFilter instance without downloading DB.
@@ -93,7 +147,7 @@ func NewNoDB(opts Options) *IPFilter {
 	}
 	f := &IPFilter{
 		opts:           opts,
-		ips:            map[string]bool{},
+		ips:            map[string]*AllowIPInterval{},
 		codes:          map[string]bool{},
 		defaultAllowed: !opts.BlockByDefault,
 	}
@@ -103,6 +157,10 @@ func NewNoDB(opts Options) *IPFilter {
 	for _, ip := range opts.AllowedIPs {
 		f.AllowIP(ip)
 	}
+	for _, ipinterval := range opts.AllowedSchedule {
+		f.AllowIPInterval(ipinterval)
+	}
+
 	for _, code := range opts.BlockedCountries {
 		f.BlockCountry(code)
 	}
@@ -210,20 +268,28 @@ func (f *IPFilter) bytesDB(b []byte) error {
 }
 
 func (f *IPFilter) AllowIP(ip string) bool {
-	return f.ToggleIP(ip, true)
+	return f.ToggleIP(ip, nil, true)
+}
+
+func (f *IPFilter) AllowIPInterval(ip *IPInterval) bool {
+	return f.ToggleIP(ip.AllowedIPs, &Interval{Lower: ip.Lower, Upper: ip.Upper}, true)
 }
 
 func (f *IPFilter) BlockIP(ip string) bool {
-	return f.ToggleIP(ip, false)
+	return f.ToggleIP(ip, nil, false)
 }
 
-func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
+func (f *IPFilter) ToggleIP(str string, p_interval *Interval, allowed bool) bool {
 	//check if has subnet
 	if ip, net, err := net.ParseCIDR(str); err == nil {
 		// containing only one ip?
 		if n, total := net.Mask.Size(); n == total {
 			f.mut.Lock()
-			f.ips[ip.String()] = allowed
+			if p_interval == nil {
+				f.ips[ip.String()] = &AllowIPInterval{Lower: nil, Upper: nil, Allow: allowed}
+			} else {
+				f.ips[ip.String()] = &AllowIPInterval{Lower: p_interval.Lower, Upper: p_interval.Upper, Allow: allowed}
+			}
 			f.mut.Unlock()
 			return true
 		}
@@ -234,14 +300,16 @@ func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 			if subnet.str == str {
 				found = true
 				subnet.allowed = allowed
+				subnet.interval = p_interval
 				break
 			}
 		}
 		if !found {
 			f.subnets = append(f.subnets, &subnet{
-				str:     str,
-				ipnet:   net,
-				allowed: allowed,
+				str:      str,
+				ipnet:    net,
+				allowed:  allowed,
+				interval: p_interval,
 			})
 		}
 		f.mut.Unlock()
@@ -250,7 +318,12 @@ func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 	//check if plain ip
 	if ip := net.ParseIP(str); ip != nil {
 		f.mut.Lock()
-		f.ips[ip.String()] = allowed
+		if p_interval != nil {
+			f.ips[ip.String()] = &AllowIPInterval{Allow: allowed, Lower: p_interval.Lower, Upper: p_interval.Upper}
+		} else {
+			f.ips[ip.String()] = &AllowIPInterval{Allow: allowed, Lower: nil, Upper: nil}
+
+		}
 		f.mut.Unlock()
 		return true
 	}
@@ -298,16 +371,24 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	//check single ips
 	allowed, ok := f.ips[ip.String()]
 	if ok {
-		return allowed
+		if allowed.Lower == nil {
+			return allowed.Allow
+		} else {
+			return time.Now().Before(*allowed.Upper) && time.Now().After(*allowed.Lower) && allowed.Allow
+		}
 	}
 	//scan subnets for any allow/block
 	blocked := false
 	for _, subnet := range f.subnets {
 		if subnet.ipnet.Contains(ip) {
-			if subnet.allowed {
+			if allowed == nil && subnet.allowed {
 				return true
+			} else {
+				if subnet.allowed && allowed.Upper != nil && time.Now().Before(*allowed.Upper) && time.Now().After(*allowed.Lower) {
+					return true
+				}
+				blocked = true
 			}
-			blocked = true
 		}
 	}
 	if blocked {
@@ -415,22 +496,22 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func inTimeSpan(start, end, check time.Time) bool {
-    return check.After(start) && check.Before(end)
+	return check.After(start) && check.Before(end)
 }
 
 func Demo() {
 	fmt.Println(time.Now().Format(time.RFC850))
-    start, _ := time.Parse(time.RFC822, "01 Jan 15 10:00 UTC")
-    end, _ := time.Parse(time.RFC822, "01 Jan 16 10:00 UTC")
+	start, _ := time.Parse(time.RFC822, "01 Jan 15 10:00 UTC")
+	end, _ := time.Parse(time.RFC822, "01 Jan 16 10:00 UTC")
 
-    in, _ := time.Parse(time.RFC822, "01 Jan 15 20:00 UTC")
-    out, _ := time.Parse(time.RFC822, "01 Jan 17 10:00 UTC")
+	in, _ := time.Parse(time.RFC822, "01 Jan 15 20:00 UTC")
+	out, _ := time.Parse(time.RFC822, "01 Jan 17 10:00 UTC")
 
-    if inTimeSpan(start, end, in) {
-        fmt.Println(in, "is between", start, "and", end, ".")
-    }
+	if inTimeSpan(start, end, in) {
+		fmt.Println(in, "is between", start, "and", end, ".")
+	}
 
-    if !inTimeSpan(start, end, out) {
-        fmt.Println(out, "is not between", start, "and", end, ".")
-    }
+	if !inTimeSpan(start, end, out) {
+		fmt.Println(out, "is not between", start, "and", end, ".")
+	}
 }
