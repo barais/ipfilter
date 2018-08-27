@@ -3,6 +3,7 @@ package ipfilter
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -66,6 +67,39 @@ type IPInterval struct {
 	Lower      *time.Time
 	Upper      *time.Time
 	AllowedIPs string
+}
+
+func (l *IPInterval) UnmarshalJSON(j []byte) error {
+	var rawStrings map[string]string
+
+	err := json.Unmarshal(j, &rawStrings)
+	if err != nil {
+		return err
+	}
+
+	for k, v := range rawStrings {
+		if strings.ToLower(k) == "lower" {
+			t, err := time.Parse(time.RFC822, v)
+			if err != nil {
+				return err
+			}
+			l.Lower = &t
+
+		}
+		if strings.ToLower(k) == "upper" {
+			t, err := time.Parse(time.RFC822, v)
+			if err != nil {
+				return err
+			}
+			l.Upper = &t
+
+		}
+		if strings.ToLower(k) == "allowedips" {
+			l.AllowedIPs = v
+		}
+	}
+
+	return nil
 }
 
 type Interval struct {

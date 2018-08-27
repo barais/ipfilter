@@ -1,6 +1,8 @@
 package ipfilter
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -112,4 +114,12 @@ func TestDynamicList(t *testing.T) {
 	assert.True(t, f.Allowed("116.31.116.51"), "[1] CN should be allowed")
 	f.BlockCountry("CN")
 	assert.True(t, f.Blocked("116.31.116.51"), "[1] CN should be blocked")
+}
+
+func TestJSONUnmarsharl(t *testing.T) {
+	allowedSchedule := `[{"lower":"02 Jan 06 15:04 MST","upper":"02 Jan 06 16:04 MST","allowedips":"116.31.116.51"}]`
+	var allowedScheduleO []IPInterval
+	json.Unmarshal([]byte(allowedSchedule), &allowedScheduleO)
+	fmt.Printf("Birds : %+v", allowedScheduleO)
+	assert.Equal(t, allowedScheduleO[0].AllowedIPs, "116.31.116.51")
 }
