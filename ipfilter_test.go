@@ -41,6 +41,23 @@ func TestIntervalSingleIP(t *testing.T) {
 	assert.True(t, f.NetBlocked(net.IP{222, 25, 118, 2}), "[4] should be blocked")
 }
 
+func TestIntervalSingleIP2(t *testing.T) {
+	var low = time.Now().Add(time.Hour * 2)
+	var up = time.Now().Add(time.Hour * 3)
+	f, err := New(Options{
+		//		AllowedIPs:      []string{"222.25.118.1"},
+		BlockByDefault:  true,
+		AllowedSchedule: []*IPInterval{&IPInterval{AllowedIPs: "222.25.118.1", Lower: &low, Upper: &up}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.True(t, f.Blocked("222.25.118.1"), "[1] should be blocked")
+	assert.True(t, f.Blocked("222.25.118.2"), "[2] should be blocked")
+	assert.True(t, f.NetBlocked(net.IP{222, 25, 118, 1}), "[3] should be blocked")
+	assert.True(t, f.NetBlocked(net.IP{222, 25, 118, 2}), "[4] should be blocked")
+}
+
 func TestSubnetIP(t *testing.T) {
 	f, err := New(Options{
 
@@ -118,9 +135,9 @@ func TestDynamicList(t *testing.T) {
 
 func TestJSONUnmarsharl(t *testing.T) {
 	allowedSchedule := `[{"lower":"02 Jan 06 15:04 MST","upper":"02 Jan 06 16:04 MST","allowedips":"116.31.116.51"}]`
-	var allowedScheduleO []IPInterval
+	var allowedScheduleO []*IPInterval
 	json.Unmarshal([]byte(allowedSchedule), &allowedScheduleO)
-	fmt.Printf("IP : %+v", allowedScheduleO)
+	fmt.Printf("IP : %+v", allowedScheduleO[0].AllowedIPs)
 	assert.Equal(t, allowedScheduleO[0].AllowedIPs, "116.31.116.51")
 	v, _ := time.Parse(time.RFC822, "02 Jan 06 15:04 MST")
 	assert.Equal(t, allowedScheduleO[0].Lower, &v)
