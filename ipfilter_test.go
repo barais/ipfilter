@@ -120,6 +120,8 @@ func TestJSONUnmarsharl(t *testing.T) {
 	allowedSchedule := `[{"lower":"02 Jan 06 15:04 MST","upper":"02 Jan 06 16:04 MST","allowedips":"116.31.116.51"}]`
 	var allowedScheduleO []IPInterval
 	json.Unmarshal([]byte(allowedSchedule), &allowedScheduleO)
-	fmt.Printf("Birds : %+v", allowedScheduleO)
+	fmt.Printf("IP : %+v", allowedScheduleO)
 	assert.Equal(t, allowedScheduleO[0].AllowedIPs, "116.31.116.51")
+	v, _ := time.Parse(time.RFC822, "02 Jan 06 15:04 MST")
+	assert.Equal(t, allowedScheduleO[0].Lower, &v)
 }
