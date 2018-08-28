@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -322,7 +321,6 @@ func (f *IPFilter) BlockIP(ip string) bool {
 }
 
 func (f *IPFilter) ToggleIP(str string, p_interval *Interval, allowed bool) bool {
-	fmt.Println("passe par là")
 	//check if has subnet
 	if ip, net, err := net.ParseCIDR(str); err == nil {
 		// containing only one ip?
@@ -411,20 +409,17 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	//except for db access
 	f.mut.RLock()
 	defer f.mut.RUnlock()
-	fmt.Println("pass par là")
-	fmt.Printf("len=%d\n", len(f.ips))
+	//	fmt.Printf("len=%d\n", len(f.ips))
 
 	//check single ips
 	allowed, ok := f.ips[ip.String()]
 	if ok {
 		if allowed.Lower == nil {
-			fmt.Println("return allowed.Allow")
 			return allowed.Allow
 		} else {
-			fmt.Println("" + (*allowed.Lower).String())
-			fmt.Println("" + (*allowed.Upper).String())
-			fmt.Println(allowed.Allow)
-
+			//			fmt.Println("" + (*allowed.Lower).String())
+			//			fmt.Println("" + (*allowed.Upper).String())
+			//fmt.Println(allowed.Allow)
 			return time.Now().Before(*allowed.Upper) && time.Now().After(*allowed.Lower) && allowed.Allow
 		}
 	}
@@ -542,7 +537,7 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
 
 	}
-	fmt.Println(ip)
+	//fmt.Println(ip)
 
 	//show simple forbidden text
 	if !m.IPFilter.Allowed(ip) {
