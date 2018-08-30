@@ -1,13 +1,13 @@
 # ipfilter
 
-A package for IP Filtering in Go (golang)
+A package for IP Filtering in Go that could also open for a specific time schedule(golang)
 
-[![GoDoc](https://godoc.org/github.com/jpillora/ipfilter?status.svg)](https://godoc.org/github.com/jpillora/ipfilter)  [![CircleCI](https://circleci.com/gh/jpillora/ipfilter.svg?style=shield)](https://circleci.com/gh/jpillora/ipfilter)
+Fork and extension of (https://circleci.com/gh/jpillora/ipfilter)
 
 ### Install
 
 ```
-go get github.com/jpillora/ipfilter
+go get github.com/barais/ipfilter
 ```
 
 ### Features
@@ -18,6 +18,7 @@ go get github.com/jpillora/ipfilter
 * Subnet support
 * Location filtering (via [GeoLite2](https://dev.maxmind.com/geoip/geoip2/geolite2/))
 * Simple HTTP middleware
+* JSON configuration
 
 ### Usage
 
