@@ -5,12 +5,14 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +72,36 @@ func NewOption(allowedScheduleO []*IPInterval) *Options {
 	return f
 }
 
+func getAllIPs(x string) []string {
+	var res []string
+	i := strings.Index(x, "-")
+	if i > -1 {
+		chars := x[:i]
+		arefun := x[i+1:]
+		j := strings.LastIndex(chars, ".")
+		k := strings.LastIndex(arefun, ".")
+		common1 := chars[:j+1]
+		common2 := arefun[:k+1]
+		if common1 == common2 {
+			begin := chars[j+1:]
+			last := arefun[k+1:]
+			ibegin, _ := strconv.Atoi(begin)
+			ilast, _ := strconv.Atoi(last)
+			for ii := ibegin; ii <= ilast; ii++ {
+				res = append(res, common1+strconv.Itoa(ii))
+			}
+		} else {
+			fmt.Println("bad")
+			res = append(res, chars)
+		}
+
+	} else {
+		fmt.Println("Index not found")
+		res = append(res, x)
+	}
+	return res
+}
+
 type IPInterval struct {
 	Lower      *time.Time
 	Upper      *time.Time
@@ -115,8 +147,8 @@ type Interval struct {
 }
 
 type AllowIPInterval struct {
-	Lower *time.Time
-	Upper *time.Time
+	Lower []*time.Time
+	Upper []*time.Time
 	Allow bool
 }
 
@@ -146,7 +178,7 @@ func NewInterval(low *time.Time, up *time.Time, ip string) *Interval {
 /*
  *  Constuctor for Interval
  */
-func NewAllowIPInterval(low *time.Time, up *time.Time, allow bool) *AllowIPInterval {
+func NewAllowIPInterval(low []*time.Time, up []*time.Time, allow bool) *AllowIPInterval {
 	f := &AllowIPInterval{
 		Lower: low,
 		Upper: up,
@@ -313,7 +345,18 @@ func (f *IPFilter) AllowIP(ip string) bool {
 }
 
 func (f *IPFilter) AllowIPInterval(ip *IPInterval) bool {
-	return f.ToggleIP(ip.AllowedIPs, &Interval{Lower: ip.Lower, Upper: ip.Upper}, true)
+	var ips []string
+	ips = getAllIPs(ip.AllowedIPs)
+	var res bool
+	res = true
+	if len(ips) == 1 {
+		return f.ToggleIP(ips[0], &Interval{Lower: ip.Lower, Upper: ip.Upper}, true)
+	} else {
+		for ipindex := 0; ipindex < len(ips); ipindex++ {
+			res = res && f.ToggleIP(ips[ipindex], &Interval{Lower: ip.Lower, Upper: ip.Upper}, true)
+		}
+	}
+	return res
 }
 
 func (f *IPFilter) BlockIP(ip string) bool {
@@ -329,7 +372,16 @@ func (f *IPFilter) ToggleIP(str string, p_interval *Interval, allowed bool) bool
 			if p_interval == nil {
 				f.ips[ip.String()] = &AllowIPInterval{Lower: nil, Upper: nil, Allow: allowed}
 			} else {
-				f.ips[ip.String()] = &AllowIPInterval{Lower: p_interval.Lower, Upper: p_interval.Upper, Allow: allowed}
+				if f.ips[ip.String()] != nil {
+					f.ips[ip.String()].Upper = append(f.ips[ip.String()].Upper, p_interval.Upper)
+					f.ips[ip.String()].Lower = append(f.ips[ip.String()].Lower, p_interval.Lower)
+				} else {
+					var low []*time.Time
+					low = append(low, p_interval.Lower)
+					var up []*time.Time
+					up = append(up, p_interval.Upper)
+					f.ips[ip.String()] = &AllowIPInterval{Lower: low, Upper: up, Allow: allowed}
+				}
 			}
 			f.mut.Unlock()
 			return true
@@ -360,7 +412,18 @@ func (f *IPFilter) ToggleIP(str string, p_interval *Interval, allowed bool) bool
 	if ip := net.ParseIP(str); ip != nil {
 		f.mut.Lock()
 		if p_interval != nil {
-			f.ips[ip.String()] = &AllowIPInterval{Allow: allowed, Lower: p_interval.Lower, Upper: p_interval.Upper}
+			if f.ips[ip.String()] != nil {
+				f.ips[ip.String()].Upper = append(f.ips[ip.String()].Upper, p_interval.Upper)
+				f.ips[ip.String()].Lower = append(f.ips[ip.String()].Lower, p_interval.Lower)
+			} else {
+				var low []*time.Time
+				low = append(low, p_interval.Lower)
+				var up []*time.Time
+				up = append(up, p_interval.Upper)
+				f.ips[ip.String()] = &AllowIPInterval{Lower: low, Upper: up, Allow: allowed}
+			}
+
+			//f.ips[ip.String()] = &AllowIPInterval{Allow: allowed, Lower: p_interval.Lower, Upper: p_interval.Upper}
 		} else {
 			f.ips[ip.String()] = &AllowIPInterval{Allow: allowed, Lower: nil, Upper: nil}
 
@@ -417,10 +480,15 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 		if allowed.Lower == nil {
 			return allowed.Allow
 		} else {
+			isinvalidtimewindow := false
+			for i := 0; i < len(allowed.Upper); i++ {
+				isinvalidtimewindow = isinvalidtimewindow || (time.Now().Before(*allowed.Upper[i]) && time.Now().After(*allowed.Lower[i]))
+			}
+
 			//			fmt.Println("" + (*allowed.Lower).String())
 			//			fmt.Println("" + (*allowed.Upper).String())
 			//fmt.Println(allowed.Allow)
-			return time.Now().Before(*allowed.Upper) && time.Now().After(*allowed.Lower) && allowed.Allow
+			return isinvalidtimewindow && allowed.Allow
 		}
 	}
 	//scan subnets for any allow/block
@@ -430,7 +498,14 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 			if allowed == nil && subnet.allowed {
 				return true
 			} else {
-				if subnet.allowed && allowed.Upper != nil && time.Now().Before(*allowed.Upper) && time.Now().After(*allowed.Lower) {
+				isinvalidtimewindow := false
+				if allowed.Upper != nil {
+					for i := 0; i < len(allowed.Upper); i++ {
+						isinvalidtimewindow = isinvalidtimewindow || (time.Now().Before(*allowed.Upper[i]) && time.Now().After(*allowed.Lower[i]))
+					}
+				}
+
+				if subnet.allowed && allowed.Upper != nil && isinvalidtimewindow {
 					return true
 				}
 				blocked = true

@@ -142,3 +142,18 @@ func TestJSONUnmarsharl(t *testing.T) {
 	v, _ := time.Parse(time.RFC822, "02 Jan 06 15:04 MST")
 	assert.Equal(t, allowedScheduleO[0].Lower, &v)
 }
+
+func TestGetAllIP(t *testing.T) {
+	ip := "192.168.1.23-192.168.1.54"
+	ip1 := "192.168.1.23"
+	ip2 := "192.168.1.23-192.158.1.54"
+	var ips []string
+	var ips1 []string
+	var ips2 []string
+	ips = getAllIPs(ip)
+	ips1 = getAllIPs(ip1)
+	ips2 = getAllIPs(ip2)
+	assert.Equal(t, 32, len(ips))
+	assert.Equal(t, 1, len(ips1))
+	assert.Equal(t, 1, len(ips2))
+}
