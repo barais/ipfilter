@@ -74,6 +74,7 @@ func NewOption(allowedScheduleO []*IPInterval) *Options {
 
 func getAllIPs(x string) []string {
 	var res []string
+
 	i := strings.Index(x, "-")
 	if i > -1 {
 		chars := x[:i]
@@ -96,7 +97,7 @@ func getAllIPs(x string) []string {
 		}
 
 	} else {
-		fmt.Println("Index not found")
+		//fmt.Println("Index not found")
 		res = append(res, x)
 	}
 	return res
@@ -365,6 +366,28 @@ func (f *IPFilter) BlockIP(ip string) bool {
 
 func (f *IPFilter) ToggleIP(str string, p_interval *Interval, allowed bool) bool {
 	//check if has subnet
+	jstar := strings.Index(str, "*")
+	if jstar > -1 {
+		//log.Println("ok for star")
+		f.mut.Lock()
+		if p_interval == nil {
+			f.ips["*"] = &AllowIPInterval{Lower: nil, Upper: nil, Allow: allowed}
+		} else {
+			if f.ips["*"] != nil {
+				f.ips["*"].Upper = append(f.ips["*"].Upper, p_interval.Upper)
+				f.ips["*"].Lower = append(f.ips["*"].Lower, p_interval.Lower)
+			} else {
+				var low []*time.Time
+				low = append(low, p_interval.Lower)
+				var up []*time.Time
+				up = append(up, p_interval.Upper)
+				f.ips["*"] = &AllowIPInterval{Lower: low, Upper: up, Allow: allowed}
+			}
+		}
+		f.mut.Unlock()
+		return true
+	}
+
 	if ip, net, err := net.ParseCIDR(str); err == nil {
 		// containing only one ip?
 		if n, total := net.Mask.Size(); n == total {
@@ -426,7 +449,6 @@ func (f *IPFilter) ToggleIP(str string, p_interval *Interval, allowed bool) bool
 			//f.ips[ip.String()] = &AllowIPInterval{Allow: allowed, Lower: p_interval.Lower, Upper: p_interval.Upper}
 		} else {
 			f.ips[ip.String()] = &AllowIPInterval{Allow: allowed, Lower: nil, Upper: nil}
-
 		}
 		f.mut.Unlock()
 		return true
@@ -473,7 +495,7 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	f.mut.RLock()
 	defer f.mut.RUnlock()
 	//	fmt.Printf("len=%d\n", len(f.ips))
-
+	fmt.Printf(ip.String() + "\n")
 	//check single ips
 	allowed, ok := f.ips[ip.String()]
 	if ok {
@@ -524,6 +546,20 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 			return allowed
 		}
 	}
+
+	allowed, ok = f.ips["*"]
+	if ok {
+		if allowed.Lower == nil {
+			return allowed.Allow
+		} else {
+			isinvalidtimewindow := false
+			for i := 0; i < len(allowed.Upper); i++ {
+				isinvalidtimewindow = isinvalidtimewindow || (time.Now().Before(*allowed.Upper[i]) && time.Now().After(*allowed.Lower[i]))
+			}
+			return isinvalidtimewindow && allowed.Allow
+		}
+	}
+
 	//use default setting
 	return f.defaultAllowed
 }
