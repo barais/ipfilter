@@ -653,13 +653,13 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//show simple forbidden text
 	if !m.IPFilter.Allowed(ip) {
 		//http.Redirect()
-		w.WriteHeader(502)
+		w.WriteHeader(403)
 		fmt.Fprint(w, "<!DOCTYPE html>"+
 			"<html lang=\"en\">"+
 			"<head>"+
 			"<!-- Simple HttpErrorPages | MIT License | https://github.com/AndiDittrich/HttpErrorPages -->"+
 			"<meta charset=\"utf-8\" /><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />"+
-			"<title>We've got some trouble | 502 - Webservice currently unavailable</title>"+
+			"<title>Application closed</title>"+
 			"<style type=\"text/css\">/*! normalize.css v5.0.0 | MIT License | github.com/necolas/normalize.css */html{font-family:sans-serif;line-height:1.15;-ms-text-si"+
 			"ze-adjust:100%;-webkit-text-size-adjust:100%}body{margin:0}article,aside,footer,header,nav,section{display:block}h1{font-size:2em;margin:.67em 0}figcaption,fig"+
 			"ure,main{display:block}figure{margin:1em 40px}hr{box-sizing:content-box;height:0;overflow:visible}pre{font-family:monospace,monospace;font-size:1em}a{backgroun"+
