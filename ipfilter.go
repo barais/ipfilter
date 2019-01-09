@@ -683,7 +683,7 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"0px;left:0;bottom:0;color:#a0a0a0;font-size:14px}</style>"+
 			"</head>"+
 			"<body>"+
-			"<div class=\"cover\"><h1>L'application de rendu de TPs n'est pas ouverte pour le moment à cette URL <BR> <small>mauvaise horaire ou mauvaise IP</small></h1><p class=\"lead\">N'hésitez pa"+
+			"<div class=\"cover\"><h1>L'application de rendu de TPs n'est pas ouverte pour le moment à cette URL <BR> <small>mauvais horaire ou mauvaise IP</small></h1><p class=\"lead\">N'hésitez pa"+
 			"s à contacter votre correspondant de TP si cette situation n'est pas normale</p></div>"+
 			"</body>"+
 			"</html>", http.StatusForbidden)
